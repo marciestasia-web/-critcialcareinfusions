@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Critical Care Infusions</title>
+<style>
+  /* ---- Styles copied from the Medication (MAR) widget so both look identical ---- */
+  :root{
+    --ink:#1f2d3a; --muted:#5b6b78; --line:#c9d3dc; --head:#eef3f6; --side:#f7f9fb;
+    --accent:#1b5e7a; --ok:#2e7d4f; --okbg:#e8f5ec; --err:#b42318; --errbg:#fdecea;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:transparent;color:var(--ink);
+    font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .mar{padding:2px 2px 6px}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:6px;background:#fff}
+  table{border-collapse:separate;border-spacing:0;min-width:100%}
+  th,td{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:6px;vertical-align:top;background:#fff;text-align:left}
+  tr > *:last-child{border-right:0}
+  tfoot tr > *{border-bottom:0}
+  thead th{background:var(--head);font-weight:600}
+  .rowh{position:sticky;left:0;z-index:2;min-width:170px;width:170px;background:var(--side);box-shadow:1px 0 0 var(--line)}
+  thead .rowh{z-index:3;background:var(--head);vertical-align:bottom}
+  tfoot th, tfoot td{background:var(--side)}
+  .col{min-width:132px;width:132px}
+
+  input{font:inherit;color:inherit;width:100%;border:1px solid var(--line);border-radius:4px;padding:7px 8px;background:#fff;min-height:38px;-webkit-appearance:none;appearance:none}
+  input:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+  .dt input{padding:5px 6px;font-size:14px;min-height:34px}
+  .dt input + input{margin-top:4px}
+  .colbar{display:flex;justify-content:space-between;align-items:center;gap:4px;margin-bottom:4px}
+  .medcell{display:flex;gap:4px;align-items:center}
+  .initials input{text-transform:uppercase;text-align:center;font-weight:600;letter-spacing:.04em}
+
+  button{font:inherit;cursor:pointer;border-radius:4px}
+  button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .mini{border:1px solid var(--line);background:#fff;color:var(--accent);font-size:13px;padding:3px 8px;min-height:28px}
+  .x{border:0;background:transparent;color:var(--muted);font-size:18px;line-height:1;padding:2px 6px;min-height:28px;flex:none}
+  .x.arm{color:#fff;background:var(--err);font-size:12px;padding:5px 6px}
+
+  .msg{display:none;font-size:12px;color:var(--err);margin-top:4px;font-weight:600}
+  .need{background:var(--errbg) !important}
+  td.need input, input.missing{border-color:var(--err)}
+  .need .msg{display:block}
+  .signed{background:var(--okbg) !important}
+  thead th.signed{box-shadow:inset 0 3px 0 var(--ok)}
+
+  .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .btn{border:1px solid var(--accent);background:#fff;color:var(--accent);padding:8px 14px;min-height:40px;font-weight:600}
+  .status{margin-top:8px;font-size:14px;color:var(--muted);min-height:1.4em}
+  .status.bad{color:var(--err);font-weight:600}
+  .tzlabel{display:block;font-weight:400;font-size:12px;color:var(--muted);margin-top:2px}
+  .local{font-size:12px;color:var(--muted);margin-top:3px;min-height:1em}
+  .btn.quiet{border-color:var(--line);color:var(--muted)}
+  #preview{display:none;margin-top:10px;max-width:100%;border:1px solid var(--line);border-radius:4px;background:#fff}
+  #preview.show{display:block}
+
+  /* ---- Infusion additions, built from the same values as above ---- */
+  select{font:inherit;color:inherit;width:100%;border:1px solid var(--line);border-radius:4px;padding:7px 4px;background:#fff;min-height:38px}
+  select.missing{border-color:var(--err)}
+  select:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+  input[type=number]{-moz-appearance:textfield}
+  input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+  .line{display:flex;gap:4px;margin-top:4px}
+  .line > *{flex:1 1 0;min-width:0}
+  .line > select.narrow{flex:0 0 66px}
+  .entry input + input{margin-top:4px}
+  .tzsel{margin-top:4px;font-weight:600}
+  .clock{font-size:12px;color:var(--accent);font-weight:600;margin-top:4px}
+  .conc{font-size:12px;color:var(--accent);font-weight:600;margin-top:4px;min-height:1em}
+  .none{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-weight:600}
+  .none input{width:20px;min-height:20px;height:20px;padding:0;-webkit-appearance:checkbox;appearance:auto}
+  .off{display:none}
+</style>
+</head>
+<body>
+<div class="mar" id="mar">
+  <label class="none" id="noneWrap"><input type="checkbox" id="none"> No critical care infusions</label>
+  <div id="work">
+    <div class="scroll"><table id="grid" aria-label="Critical care infusion record"></table></div>
+    <div class="actions">
+      <button type="button" class="btn" id="addInf">Add infusion</button>
+      <button type="button" class="btn" id="addTime">Add time</button>
+      <button type="button" class="btn quiet" id="togglePreview" aria-expanded="false">Preview PDF layout</button>
+    </div>
+  </div>
+  <div class="status" id="status" role="status" aria-live="polite"></div>
+  <img id="preview" alt="Preview of the infusion record as it will appear in the PDF">
+</div>
+
+<script>
+(function () {
+  var grid = document.getElementById('grid');
+  var statusEl = document.getElementById('status');
+  var root = document.getElementById('mar');
+  var noneBox = document.getElementById('none'), noneWrap = document.getElementById('noneWrap'), work = document.getElementById('work');
+  var uid = 0, booted = false, lastH = 0, sendTimer = null, tried = false;
+  var state = { cols: [], infs: [], none: false, tz: 0 };
+
+  var DILUENTS = ['NS', 'D5W', 'RL', 'Other'];
+  var DRUG_UNITS = ['mg', 'mcg', 'units', 'g', 'mmol', 'mEq'];
+  var DOSE_UNITS = ['mcg/kg/min', 'mcg/min', 'mg/hr', 'mg/kg/hr', 'mcg/kg/hr', 'units/hr', 'units/min', 'units/kg/hr', 'mL/hr'];
+  var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  function nid() { return 'k' + (++uid); }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function filled(v) { return String(v == null ? '' : v).trim() !== ''; }
+  function num(v) { var n = parseFloat(v); return isNaN(n) ? null : n; }
+  function fmtN(n) { return String(Math.round(n * 1000) / 1000); }
+
+  // ---------- Time zone for this record ----------
+  // A fixed UTC offset (minutes). "Now" reads the true UTC clock and applies it, so entries stay in the
+  // chosen zone even if the phone changes time zone in flight.
+  function deviceOffset() { return -new Date().getTimezoneOffset(); }
+  function tzName(min) {
+    if (!min) return 'UTC';
+    var a = Math.abs(min);
+    return 'UTC' + (min < 0 ? '−' : '+') + Math.floor(a / 60) + (a % 60 ? ':' + pad(a % 60) : '');
+  }
+  function tzFromName(s) {
+    var m = /^UTC(?:([+−-])(\d{1,2})(?::(\d{2}))?)?$/.exec(String(s || '').trim());
+    if (!m) return null;
+    if (!m[1]) return 0;
+    var v = +m[2] * 60 + (+m[3] || 0);
+    return m[1] === '+' ? v : -v;
+  }
+  var TZ_LIST = (function () {
+    var l = [];
+    for (var m = -720; m <= 840; m += 15) { var a = Math.abs(m) % 60; if (a === 0 || a === 30 || [345, 525, 765].indexOf(Math.abs(m)) > -1) l.push(m); }
+    return l;
+  })();
+  function zoned() { return new Date(Date.now() + state.tz * 60000); }
+  function stampNow(c) {
+    var d = zoned();
+    c.date = d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate());
+    c.time = pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes());
+    c.tz = state.tz;
+  }
+  // Device-local equivalent of an entry, shown as a hint under the time (as on the MAR).
+  function localHint(c) {
+    var off = c.tz == null ? state.tz : c.tz;
+    if (off === deviceOffset()) return '';
+    var dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(c.date || ''), tm = /^(\d{2}):(\d{2})/.exec(c.time || '');
+    if (!dm || !tm) return '';
+    var d = new Date(Date.UTC(+dm[1], +dm[2] - 1, +dm[3], +tm[1], +tm[2]) - off * 60000);
+    var t = pad(d.getHours()) + ':' + pad(d.getMinutes());
+    var sameDay = d.getFullYear() === +dm[1] && d.getMonth() === +dm[2] - 1 && d.getDate() === +dm[3];
+    return 'Device time ' + t + (sameDay ? '' : ' (' + d.getDate() + ' ' + MONTHS[d.getMonth()] + ')');
+  }
+  function tick() {
+    var c = document.getElementById('clockNow'), p = document.getElementById('clockPhone');
+    if (!c) return;
+    var z = zoned(), d = new Date();
+    c.textContent = 'Now ' + pad(z.getUTCHours()) + ':' + pad(z.getUTCMinutes()) + ' ' + tzName(state.tz);
+    p.textContent = 'Phone ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ' (' + tzName(deviceOffset()) + ')';
+  }
+  setInterval(tick, 15000);
+
+  // 24-hour time box: the phone's own time picker follows the device's 12/24-hour setting,
+  // so time is typed as HHMM and shown as HH:MM on a 24-hour clock.
+  function validTime(t) { return /^([01]\d|2[0-3]):[0-5]\d$/.test(t || ''); }
+  function time24(c, n) {
+    var i = el('input', { type: 'text', value: c.time, 'class': 'ctime', inputmode: 'numeric', maxlength: '5',
+      placeholder: 'HH:MM', autocomplete: 'off', 'aria-label': 'Time ' + n + ', 24-hour' });
+    i.addEventListener('input', function () {
+      var d = i.value.replace(/\D/g, '').slice(0, 4);
+      i.value = d.length > 2 ? d.slice(0, 2) + ':' + d.slice(2) : d;
+      c.time = i.value; if (c.tz == null) c.tz = state.tz; changed();
+    });
+    i.addEventListener('blur', function () {
+      var d = i.value.replace(/\D/g, '');
+      if (d.length === 3) d = '0' + d;            // 930 -> 09:30
+      if (d.length === 4) { i.value = d.slice(0, 2) + ':' + d.slice(2); c.time = i.value; changed(); }
+    });
+    return i;
+  }
+  function blankCol(fill) { var c = { id: nid(), date: '', time: '', tz: null }; if (fill) stampNow(c); return c; }
+  function blankInf() { return { id: nid(), name: '', amount: '', unit: 'mg', diluent: '', dilOther: '', volume: '', doseUnit: 'mcg/kg/min', cells: {} }; }
+  function cellOf(f, c) { return f.cells[c.id] || (f.cells[c.id] = { dose: '', rate: '', vol: '', init: '' }); }
+  function cellUsed(v) { return !!v && (filled(v.dose) || filled(v.rate) || filled(v.vol)); }
+  function colHas(c) { return state.infs.some(function (f) { return cellUsed(f.cells[c.id]); }); }
+  function infHas(f) { return state.cols.some(function (c) { return cellUsed(f.cells[c.id]); }); }
+  function infStarted(f) { return infHas(f) || filled(f.name) || filled(f.amount) || filled(f.volume) || filled(f.diluent); }
+  function dilName(f) { return f.diluent === 'Other' ? (f.dilOther || 'Other') : f.diluent; }
+  function concentration(f) {
+    var a = num(f.amount), v = num(f.volume);
+    if (a === null || v === null || v <= 0) return '';
+    var c = a / v, t = fmtN(c) + ' ' + f.unit + '/mL';
+    if (f.unit === 'mg') t += ' (' + fmtN(c * 1000) + ' mcg/mL)';
+    if (f.unit === 'g') t += ' (' + fmtN(c * 1000) + ' mg/mL)';
+    return t;
+  }
+  function totalVol(f) { return state.cols.reduce(function (t, c) { var v = f.cells[c.id]; return t + ((v && num(v.vol)) || 0); }, 0); }
+
+  function el(tag, attrs, kids) {
+    var e = document.createElement(tag);
+    if (attrs) for (var k in attrs) {
+      if (k === 'class') e.className = attrs[k];
+      else if (k === 'value') e.value = attrs[k];
+      else e.setAttribute(k, attrs[k]);
+    }
+    (kids || []).forEach(function (c) {
+      if (c != null) e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    });
+    return e;
+  }
+  function onEdit(input, fn) {
+    input.addEventListener('input', fn);
+    input.addEventListener('change', fn); // iOS date/time pickers fire change
+    return input;
+  }
+  function sel(options, value, label, cls, placeholder) {
+    var s = el('select', { 'aria-label': label, 'class': cls || '' });
+    if (placeholder) s.appendChild(el('option', { value: '' }, [placeholder]));
+    options.forEach(function (o) {
+      var v = typeof o === 'object' ? o.v : o, t = typeof o === 'object' ? o.t : o;
+      var op = el('option', { value: String(v) }, [t]);
+      if (String(v) === String(value)) op.selected = true;
+      s.appendChild(op);
+    });
+    return s;
+  }
+  // Two-tap remove: first tap arms, second tap within 3 s removes.
+  function removeBtn(fn, label) {
+    var b = el('button', { type: 'button', 'class': 'x', 'aria-label': label, title: label }, ['×']);
+    var t;
+    b.addEventListener('click', function () {
+      if (b.classList.contains('arm')) { clearTimeout(t); fn(); return; }
+      b.classList.add('arm'); b.textContent = 'Remove?';
+      t = setTimeout(function () { b.classList.remove('arm'); b.textContent = '×'; }, 3000);
+    });
+    return b;
+  }
+
+  function render() {
+    noneBox.checked = state.none;
+    var anyEntry = state.cols.some(colHas);
+    noneWrap.classList.toggle('off', anyEntry);
+    work.classList.toggle('off', state.none);
+
+    grid.textContent = '';
+    var oneCol = state.cols.length === 1, oneInf = state.infs.length === 1;
+
+    // Header: time zone, then date and time per column
+    var tzSel = sel(TZ_LIST.map(function (m) { return { v: m, t: tzName(m) }; }), state.tz, 'Time zone for this record', 'tzsel');
+    tzSel.addEventListener('change', function (e) { state.tz = +e.target.value; render(); changed(); });
+    var hr = el('tr', null, [el('th', { 'class': 'rowh', scope: 'col' }, ['Infusion',
+      el('span', { 'class': 'tzlabel' }, ['Time zone for this record']), tzSel,
+      el('div', { 'class': 'clock', id: 'clockNow' }), el('div', { 'class': 'local', id: 'clockPhone' })])]);
+    state.cols.forEach(function (c, i) {
+      var n = i + 1;
+      var bar = el('div', { 'class': 'colbar' }, [
+        el('button', { type: 'button', 'class': 'mini', 'aria-label': 'Set time ' + n + ' to now' }, ['Now'])
+      ]);
+      bar.firstChild.addEventListener('click', function () { stampNow(c); render(); changed(); });
+      if (!oneCol) bar.appendChild(removeBtn(function () {
+        state.cols.splice(state.cols.indexOf(c), 1);
+        state.infs.forEach(function (f) { delete f.cells[c.id]; });
+        render(); changed();
+      }, 'Remove time ' + n));
+      hr.appendChild(el('th', { 'class': 'col dt', 'data-col': c.id, scope: 'col' }, [
+        bar,
+        onEdit(el('input', { type: 'date', value: c.date, 'class': 'cdate', 'aria-label': 'Date, time ' + n }),
+          function (e) { c.date = e.target.value; if (c.tz == null) c.tz = state.tz; changed(); }),
+        time24(c, n),
+        el('div', { 'class': 'local' }),
+        el('div', { 'class': 'msg' }, ['Date and time required'])
+      ]));
+    });
+    grid.appendChild(el('thead', null, [hr]));
+
+    // Body: one row per infusion; dose, rate, volume and initials under each time
+    var tb = el('tbody');
+    state.infs.forEach(function (f, r) {
+      var nameIn = onEdit(el('input', { type: 'text', value: f.name, placeholder: 'Infusion name',
+        autocomplete: 'off', 'aria-label': 'Infusion ' + (r + 1) + ' name', 'class': 'medname' }),
+        function (e) { f.name = e.target.value; changed(); });
+      var cell = el('div', { 'class': 'medcell' }, [nameIn]);
+      if (!oneInf) cell.appendChild(removeBtn(function () {
+        state.infs.splice(state.infs.indexOf(f), 1); render(); changed();
+      }, 'Remove infusion ' + (r + 1)));
+
+      var concEl = el('div', { 'class': 'conc' }, [concentration(f)]);
+      function prepEdit(key) { return function (e) { f[key] = e.target.value; concEl.textContent = concentration(f); changed(); }; }
+      var amount = onEdit(el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: f.amount, placeholder: 'Amount', 'aria-label': 'Amount of drug', 'class': 'pamount' }), prepEdit('amount'));
+      var unit = onEdit(sel(DRUG_UNITS, f.unit, 'Drug unit', 'narrow'), prepEdit('unit'));
+      var vol = onEdit(el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: f.volume, placeholder: 'Diluent mL', 'aria-label': 'Diluent volume in mL', 'class': 'pvolume' }), prepEdit('volume'));
+      var dil = sel(DILUENTS, f.diluent, 'Diluent', 'narrow pdiluent', 'Diluent');
+      dil.addEventListener('change', function (e) { f.diluent = e.target.value; render(); changed(); });
+      var doseU = onEdit(sel(DOSE_UNITS, f.doseUnit, 'Dose units'), prepEdit('doseUnit'));
+
+      var th = el('th', { 'class': 'rowh', scope: 'row', 'data-inf': f.id }, [
+        cell,
+        el('div', { 'class': 'line' }, [amount, unit]),
+        el('div', { 'class': 'line' }, [vol, dil]),
+        f.diluent === 'Other' ? el('div', { 'class': 'line' }, [onEdit(el('input', { type: 'text', value: f.dilOther, placeholder: 'Specify diluent', 'aria-label': 'Specify diluent', 'class': 'pother' }), prepEdit('dilOther'))]) : null,
+        el('div', { 'class': 'line' }, [doseU]),
+        concEl,
+        el('div', { 'class': 'msg' }, ['Infusion details required'])
+      ]);
+      var tr = el('tr', null, [th]);
+
+      state.cols.forEach(function (c, i) {
+        var v = cellOf(f, c), at = ' of infusion ' + (r + 1) + ' at time ' + (i + 1);
+        function edit(key, upper) { return function (e) { v[key] = upper ? e.target.value.toUpperCase() : e.target.value; changed(); }; }
+        tr.appendChild(el('td', { 'class': 'col entry', 'data-col': c.id, 'data-cell': f.id + '|' + c.id }, [
+          onEdit(el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: v.dose, placeholder: 'Dose', autocomplete: 'off', 'aria-label': 'Dose' + at, 'class': 'cdose' }), edit('dose')),
+          onEdit(el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: v.rate, placeholder: 'mL/hr', autocomplete: 'off', 'aria-label': 'Rate in mL per hour' + at, 'class': 'crate' }), edit('rate')),
+          onEdit(el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: v.vol, placeholder: 'Vol infused', autocomplete: 'off', 'aria-label': 'Volume infused in mL' + at, 'class': 'cvol' }), edit('vol')),
+          el('div', { 'class': 'initials' }, [onEdit(el('input', { type: 'text', value: v.init, maxlength: '4', placeholder: 'Initials', autocomplete: 'off',
+            autocapitalize: 'characters', spellcheck: 'false', 'aria-label': 'Initials' + at, 'class': 'cinit' }), edit('init', true))]),
+          el('div', { 'class': 'msg' })
+        ]));
+      });
+      tb.appendChild(tr);
+    });
+    grid.appendChild(tb);
+
+    validate();
+    tick();
+    resize();
+  }
+
+  // A time with any entry needs a date and time; each entry needs dose with rate, and initials;
+  // an infusion with entries needs its details.
+  function validate() {
+    var noDT = 0, noInit = 0, noPair = 0, noPrep = 0;
+    var cellBad = {};
+    state.cols.forEach(function (c) {
+      var has = colHas(c);
+      var dateMiss = has && !filled(c.date), timeBad = filled(c.time) && !validTime(c.time), timeMiss = (has && !filled(c.time)) || timeBad;
+      if (dateMiss || timeMiss) noDT++;
+      var colOk = has && !dateMiss && !timeMiss;
+      state.infs.forEach(function (f) {
+        var v = f.cells[c.id], used = cellUsed(v), m = [];
+        if (used && !filled(v.init)) { m.push('Initials required'); noInit++; }
+        if (v && filled(v.dose) !== filled(v.rate) && used) { m.push(filled(v.dose) ? 'Rate required' : 'Dose required'); noPair++; }
+        if (v && !used && filled(v.init)) { m.push('Enter a dose'); noPair++; }
+        if (m.length) { cellBad[f.id + '|' + c.id] = m; colOk = false; }
+      });
+      var cells = grid.querySelectorAll('[data-col="' + c.id + '"]');
+      for (var i = 0; i < cells.length; i++) cells[i].classList.toggle('signed', colOk);
+      var th = grid.querySelector('thead th[data-col="' + c.id + '"]');
+      if (th) {
+        th.classList.toggle('need', dateMiss || timeMiss);
+        th.querySelector('.cdate').classList.toggle('missing', dateMiss);
+        th.querySelector('.ctime').classList.toggle('missing', timeMiss);
+        th.querySelector('.local').textContent = localHint(c);
+        th.querySelector('.msg').textContent = timeBad ? 'Use 24-hour time, e.g. 14:30' : dateMiss && timeMiss ? 'Date and time required' : dateMiss ? 'Date required' : 'Time required';
+      }
+    });
+    var tds = grid.querySelectorAll('td[data-cell]');
+    for (var j = 0; j < tds.length; j++) {
+      var bad = cellBad[tds[j].getAttribute('data-cell')], v2 = null;
+      var ids = tds[j].getAttribute('data-cell').split('|');
+      state.infs.forEach(function (f) { if (f.id === ids[0]) v2 = f.cells[ids[1]]; });
+      tds[j].classList.toggle('need', !!bad);
+      tds[j].querySelector('.msg').textContent = bad ? bad.join(' · ') : '';
+      tds[j].querySelector('.cinit').classList.toggle('missing', !!bad && cellUsed(v2) && !filled(v2.init));
+      tds[j].querySelector('.cdose').classList.toggle('missing', !!bad && !!v2 && !filled(v2.dose) && (filled(v2.rate) || filled(v2.init)));
+      tds[j].querySelector('.crate').classList.toggle('missing', !!bad && !!v2 && filled(v2.dose) && !filled(v2.rate));
+    }
+    state.infs.forEach(function (f) {
+      var need = infHas(f) || (tried && infStarted(f));
+      var miss = { name: need && !filled(f.name), amount: need && !filled(f.amount), volume: need && !filled(f.volume),
+        diluent: need && !filled(f.diluent), other: need && f.diluent === 'Other' && !filled(f.dilOther) };
+      var any = miss.name || miss.amount || miss.volume || miss.diluent || miss.other;
+      if (any) noPrep++;
+      var th = grid.querySelector('tbody th[data-inf="' + f.id + '"]');
+      if (th) {
+        th.classList.toggle('need', any);
+        th.querySelector('.medname').classList.toggle('missing', miss.name);
+        th.querySelector('.pamount').classList.toggle('missing', miss.amount);
+        th.querySelector('.pvolume').classList.toggle('missing', miss.volume);
+        th.querySelector('.pdiluent').classList.toggle('missing', miss.diluent);
+        var o = th.querySelector('.pother'); if (o) o.classList.toggle('missing', miss.other);
+        th.querySelector('.msg').textContent = miss.name && !(miss.amount || miss.volume || miss.diluent) ? 'Infusion name required' : 'Infusion details required';
+      }
+    });
+
+    var parts = [];
+    if (noPrep) parts.push(noPrep === 1 ? '1 infusion is missing its details.' : noPrep + ' infusions are missing their details.');
+    if (noDT) parts.push(noDT === 1 ? '1 time with entries is missing its date or time.' : noDT + ' times with entries are missing a date or time.');
+    if (noPair) parts.push(noPair === 1 ? '1 entry needs both a dose and a rate.' : noPair + ' entries need both a dose and a rate.');
+    if (noInit) parts.push(noInit === 1 ? '1 entry has no initials.' : noInit + ' entries have no initials.');
+    if (tried && !state.none && !state.cols.some(colHas)) parts.push('Enter an infusion, or tick “No critical care infusions”.');
+    statusEl.textContent = parts.join(' ');
+    statusEl.className = 'status' + (parts.length ? ' bad' : '');
+    return parts.length === 0;
+  }
+
+  // ---------- Plain-text value: readable in submissions and the PDF, parsed back when a submission is edited ----------
+  function usedCols() { return state.cols.filter(colHas); }
+  function usedInfs() { return state.infs.filter(function (f) { return infHas(f) || filled(f.name); }); }
+  function entryText(f, v) {
+    var p = [];
+    if (filled(v.dose)) p.push('Dose ' + v.dose.trim() + ' ' + f.doseUnit);
+    if (filled(v.rate)) p.push('Rate ' + v.rate.trim() + ' mL/hr');
+    if (filled(v.vol)) p.push('Vol ' + v.vol.trim() + ' mL');
+    p.push('Initials ' + (filled(v.init) ? v.init.trim() : '—'));
+    return p.join(' ; ');
+  }
+  function serialize() {
+    if (state.none) return 'No critical care infusions.';
+    var lines = [];
+    var infs = usedInfs();
+    if (!infs.length && !usedCols().length) return '';
+    lines.push('Time zone: ' + tzName(state.tz));
+    infs.forEach(function (f) {
+      var c = concentration(f);
+      lines.push('Infusion: ' + (f.name.trim() || '(unnamed)') + ' | ' + f.amount + ' ' + f.unit + ' in ' + dilName(f) + ' ' + f.volume + ' mL | Dose units: ' + f.doseUnit +
+        (c ? ' | ' + c : '') + ' | Total infused: ' + fmtN(totalVol(f)) + ' mL');
+    });
+    usedCols().forEach(function (c) {
+      lines.push((c.date || '(no-date)') + ' ' + (c.time || '(no-time)') + ' ' + tzName(c.tz == null ? state.tz : c.tz));
+      state.infs.forEach(function (f) {
+        var v = f.cells[c.id];
+        if (cellUsed(v)) lines.push('  - ' + (f.name.trim() || '(unnamed)') + ': ' + entryText(f, v));
+      });
+    });
+    return lines.join('\n');
+  }
+  function parse(text) {
+    if (!text || typeof text !== 'string') return false;
+    if (text.trim() === 'No critical care infusions.') { state.none = true; return true; }
+    var cols = [], infs = [], byName = {}, cur = null, tz = null;
+    function inf(name) {
+      var k = name.toLowerCase();
+      if (!byName[k]) { byName[k] = blankInf(); byName[k].name = name === '(unnamed)' ? '' : name; infs.push(byName[k]); }
+      return byName[k];
+    }
+    text.split(/\r?\n/).forEach(function (l) {
+      var m;
+      if ((m = l.match(/^Time zone: (.*)$/))) { tz = tzFromName(m[1]); }
+      else if ((m = l.match(/^Infusion: (.*?) \| (\S*) (\S+) in (.*) (\S*) mL \| Dose units: ([^|]+?)(?: \|.*)?$/))) {
+        var f = inf(m[1].trim());
+        f.amount = m[2]; f.unit = m[3]; f.volume = m[5]; f.doseUnit = m[6].trim();
+        var d = m[4].trim();
+        if (DILUENTS.indexOf(d) > -1) f.diluent = d; else if (d) { f.diluent = 'Other'; f.dilOther = d === 'Other' ? '' : d; }
+      } else if ((m = l.match(/^(\S+) (\S+) (UTC\S*)$/))) {
+        cur = { id: nid(), date: m[1] === '(no-date)' ? '' : m[1], time: m[2] === '(no-time)' ? '' : m[2], tz: tzFromName(m[3]) };
+        cols.push(cur);
+      } else if (cur && (m = l.match(/^\s+- (.*)$/))) {
+        var s = m[1], k = s.indexOf(': ');
+        if (k < 0) return;
+        var target = inf(s.slice(0, k).trim()), v = cellOf(target, cur);
+        s.slice(k + 2).split(' ; ').forEach(function (part) {
+          var q;
+          if ((q = part.match(/^Dose (\S+)/))) v.dose = q[1];
+          else if ((q = part.match(/^Rate (\S+)/))) v.rate = q[1];
+          else if ((q = part.match(/^Vol (\S+)/))) v.vol = q[1];
+          else if ((q = part.match(/^Initials (.+)$/))) v.init = q[1].trim() === '—' ? '' : q[1].trim();
+        });
+      }
+    });
+    if (!cols.length && !infs.length) return false;
+    while (cols.length < 3) cols.push(blankCol());
+    if (!infs.length) infs.push(blankInf());
+    state.cols = cols; state.infs = infs;
+    if (tz !== null) state.tz = tz;
+    return true;
+  }
+
+  // ---------- Settings (same names as the MAR) ----------
+  // output: "text" (default) or "image" (PDF-ready grid in blocks). perBlock: times per block (default 6).
+  // timezone: "utc" (default) or "local" — the starting value of the time zone menu.
+  var mode = 'text', perBlock = 6;
+  function readSettings() {
+    var o, p, tz;
+    try { var q = new URLSearchParams(location.search); o = q.get('output'); p = q.get('perBlock'); tz = q.get('timezone'); } catch (e) {}
+    try {
+      if (window.JFCustomWidget && JFCustomWidget.getWidgetSetting) {
+        o = JFCustomWidget.getWidgetSetting('output') || o;
+        p = JFCustomWidget.getWidgetSetting('perBlock') || p;
+        tz = JFCustomWidget.getWidgetSetting('timezone') || tz;
+      }
+    } catch (e) {}
+    mode = String(o || 'text').toLowerCase() === 'image' ? 'image' : 'text';
+    state.tz = String(tz || 'utc').toLowerCase() === 'local' ? deviceOffset() : 0;
+    var n = parseInt(p, 10);
+    if (n >= 2 && n <= 12) perBlock = n;
+  }
+
+  // ---------- PDF layout: grid in blocks of `perBlock` times, stacked down a portrait page ----------
+  function fmtDate(d) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || '');
+    return m ? (+m[3]) + ' ' + MONTHS[+m[2] - 1] + ' ' + m[1] : (d || '');
+  }
+  function fit(ctx, text, w) {
+    text = text || '';
+    if (ctx.measureText(text).width <= w) return text;
+    while (text.length && ctx.measureText(text + '…').width > w) text = text.slice(0, -1);
+    return text + '…';
+  }
+  function drawBlocks() {
+    if (state.none) return '';
+    var cols = usedCols();
+    var infs = state.infs.filter(function (f) { return filled(f.name) || cols.some(function (c) { return cellUsed(f.cells[c.id]); }); });
+    if (!cols.length && !infs.length) return '';
+    if (!infs.length) infs = [blankInf()];
+
+    var W = 760, MED = 170, CW = (W - MED) / perBlock, HEAD = 42, LH = 15, ROW = LH * 4 + 8, GAP = 22, TITLE = 30, LABEL = 22, S = 2;
+    var F = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif';
+    var nBlocks = Math.max(1, Math.ceil(cols.length / perBlock));
+    var gridH = HEAD + ROW * infs.length;
+    var blockH = LABEL + gridH;
+    var H = TITLE + nBlocks * blockH + (nBlocks - 1) * GAP + 2;
+
+    var cv = document.createElement('canvas');
+    cv.width = W * S; cv.height = Math.ceil(H * S);
+    var x = cv.getContext('2d');
+    x.scale(S, S);
+    x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
+    x.textBaseline = 'middle';
+    var zones = cols.map(function (c) { return c.tz == null ? state.tz : c.tz; });
+    var mixed = zones.some(function (z) { return z !== zones[0]; });
+    x.fillStyle = '#000'; x.font = '600 16px ' + F;
+    x.fillText('Critical Care Infusion Record' + (cols.length && !mixed ? ' (times ' + tzName(zones[0]) + ')' : ''), 0, TITLE / 2 - 2);
+
+    for (var b = 0; b < nBlocks; b++) {
+      var y0 = TITLE + b * (blockH + GAP), top = y0 + LABEL;
+      var slice = cols.slice(b * perBlock, (b + 1) * perBlock);
+      var first = b * perBlock + 1, last = first + Math.max(slice.length, 1) - 1;
+
+      x.font = '12px ' + F; x.fillStyle = '#444';
+      x.fillText(first === last ? 'Time ' + first : 'Times ' + first + '–' + last, 0, y0 + LABEL / 2);
+
+      x.fillStyle = '#e9eef2'; x.fillRect(0, top, W, HEAD);
+      x.fillStyle = '#000';
+      x.font = '600 13px ' + F; x.fillText('Infusion', 6, top + HEAD / 2);
+      slice.forEach(function (c, i) {
+        var cx = MED + i * CW + 5;
+        x.font = '12px ' + F; x.fillText(fit(x, fmtDate(c.date) || 'No date', CW - 10), cx, top + 13);
+        x.font = '600 13px ' + F; x.fillText(fit(x, (c.time || 'No time') + (mixed ? ' ' + tzName(c.tz == null ? state.tz : c.tz) : ''), CW - 10), cx, top + 30);
+      });
+
+      infs.forEach(function (f, r) {
+        var ry = top + HEAD + r * ROW + 4 + LH / 2;
+        var conc = concentration(f);
+        x.font = '600 13px ' + F; x.fillText(fit(x, f.name || '', MED - 12), 6, ry);
+        x.font = '12px ' + F;
+        x.fillText(fit(x, (f.amount || '') + ' ' + f.unit + ' in ' + (dilName(f) || '') + ' ' + (f.volume || '') + ' mL', MED - 12), 6, ry + LH);
+        if (conc) x.fillText(fit(x, conc, MED - 12), 6, ry + LH * 2);
+        x.fillText(fit(x, 'Total infused ' + fmtN(totalVol(f)) + ' mL', MED - 12), 6, ry + LH * 3);
+        slice.forEach(function (c, i) {
+          var v = f.cells[c.id]; if (!cellUsed(v)) return;
+          var cx = MED + i * CW + 5, ln = 0;
+          x.font = '13px ' + F;
+          if (filled(v.dose)) x.fillText(fit(x, v.dose.trim() + ' ' + f.doseUnit, CW - 10), cx, ry + LH * ln++);
+          if (filled(v.rate)) x.fillText(fit(x, v.rate.trim() + ' mL/hr', CW - 10), cx, ry + LH * ln++);
+          if (filled(v.vol)) x.fillText(fit(x, 'Vol ' + v.vol.trim() + ' mL', CW - 10), cx, ry + LH * ln++);
+          x.font = '600 13px ' + F;
+          if (filled(v.init)) x.fillText(fit(x, v.init.trim(), CW - 10), cx, ry + LH * 3);
+        });
+      });
+
+      x.strokeStyle = '#7a8792'; x.lineWidth = 1;
+      x.strokeRect(0.5, top + 0.5, W - 1, gridH);
+      x.beginPath();
+      for (var k = 0; k < perBlock; k++) {
+        var lx = Math.round(MED + k * CW) + 0.5;
+        x.moveTo(lx, top); x.lineTo(lx, top + gridH);
+      }
+      for (var r = 0; r < infs.length; r++) {
+        var ly = Math.round(top + HEAD + r * ROW) + 0.5;
+        x.moveTo(0, ly); x.lineTo(W, ly);
+      }
+      x.stroke();
+    }
+    return cv.toDataURL('image/png');
+  }
+
+  function outputValue() {
+    if (state.none) return 'No critical care infusions.';
+    return mode === 'image' ? drawBlocks() : serialize();
+  }
+
+  // ---------- Preview ----------
+  var previewEl = document.getElementById('preview');
+  var previewBtn = document.getElementById('togglePreview');
+  function refreshPreview() {
+    if (!previewEl.classList.contains('show')) return;
+    var url = drawBlocks();
+    if (url) previewEl.src = url; else previewEl.removeAttribute('src');
+    previewEl.alt = url ? 'Preview of the infusion record as it will appear in the PDF' : 'Nothing entered yet';
+  }
+  previewEl.addEventListener('load', function () { resize(); });
+  previewBtn.addEventListener('click', function () {
+    var show = !previewEl.classList.contains('show');
+    previewEl.classList.toggle('show', show);
+    previewBtn.textContent = show ? 'Hide preview' : 'Preview PDF layout';
+    previewBtn.setAttribute('aria-expanded', show ? 'true' : 'false');
+    refreshPreview(); resize();
+  });
+
+  var wasEmpty = true;
+  function changed() {
+    validate();
+    // the "No critical care infusions" box shows only while nothing is entered
+    var empty = !state.cols.some(colHas);
+    if (empty !== wasEmpty) { wasEmpty = empty; noneWrap.classList.toggle('off', !empty); }
+    clearTimeout(sendTimer);
+    sendTimer = setTimeout(function () {
+      if (window.JFCustomWidget) { try { JFCustomWidget.sendData({ value: outputValue() }); } catch (e) {} }
+      refreshPreview();
+    }, 300);
+    resize();
+  }
+
+  function resize() {
+    var h = Math.ceil(root.getBoundingClientRect().height) + 8;
+    if (h === lastH || !window.JFCustomWidget) return;
+    lastH = h;
+    try { JFCustomWidget.requestFrameResize({ height: h }); } catch (e) {}
+  }
+
+  noneBox.addEventListener('change', function () { state.none = noneBox.checked; render(); changed(); });
+  document.getElementById('addInf').addEventListener('click', function () {
+    state.infs.push(blankInf()); render(); changed();
+    var names = grid.querySelectorAll('.medname');
+    if (names.length) names[names.length - 1].focus();
+  });
+  document.getElementById('addTime').addEventListener('click', function () {
+    state.cols.push(blankCol(true)); render(); changed();
+    var sc = grid.parentNode; sc.scrollLeft = sc.scrollWidth;
+  });
+
+  // Starting layout
+  readSettings();
+  state.cols = [blankCol(), blankCol(), blankCol()];
+  state.infs = [blankInf(), blankInf()];
+  render();
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(root);
+
+  // Jotform hookup (runs once the widget library has loaded; page also works standalone for testing)
+  window.INF_BOOT = function () {
+    if (booted || !window.JFCustomWidget) return;
+    booted = true;
+    JFCustomWidget.subscribe('ready', function (data) {
+      readSettings();
+      var v = data && data.value;
+      // Text values reload into the grid; image values can't be read back, so the grid starts fresh.
+      if (v && !/^(data:image|https?:)/i.test(v)) parse(v);
+      wasEmpty = !state.cols.some(colHas);
+      render();
+      lastH = 0; resize();
+    });
+    JFCustomWidget.subscribe('submit', function () {
+      tried = true;
+      var ok = validate() && (state.none || state.cols.some(colHas));
+      JFCustomWidget.sendSubmit({ valid: ok, value: ok ? outputValue() : serialize() });
+    });
+  };
+
+  // Offline cache
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    try { navigator.serviceWorker.register('sw.js'); } catch (e) {}
+  }
+})();
+</script>
+
+<!-- Load the Jotform widget library: local copy first (works offline), Jotform's CDN as fallback -->
+<script>
+(function () {
+  function boot() { if (window.INF_BOOT) window.INF_BOOT(); }
+  var s = document.createElement('script');
+  s.src = 'JotFormCustomWidget.min.js';
+  s.onload = boot;
+  s.onerror = function () {
+    var c = document.createElement('script');
+    c.src = 'https://js.jotform.com/JotFormCustomWidget.min.js';
+    c.onload = boot; c.onerror = boot;
+    document.head.appendChild(c);
+  };
+  document.head.appendChild(s);
+})();
+</script>
+</body>
+</html>
